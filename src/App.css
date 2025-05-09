@@ -1,0 +1,32 @@
+/* Import Poppins font from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+
+/* CSS Reset */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Apply Poppins as the default font */
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: #F9F9F9;
+  color: #333;
+}
+
+/* Ensure html and body take full height */
+html, body {
+  height: 100%;
+  width: 100%;
+}
+
+/* Remove default list and anchor styles */
+ul {
+  list-style: none;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
