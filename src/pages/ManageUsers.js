@@ -6,9 +6,10 @@ import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 const ManageUsers = () => {
   const [users, setUsers] = useState([]);
   const [error, setError] = useState('');
-  const [newUser, setNewUser] = useState({ email: '', password: '', role: 'user' });
+  const [newUser, setNewUser] = useState({ email: '', password: '', role: 'user', name: '' });
   const [editUser, setEditUser] = useState(null);
-  const [editForm, setEditForm] = useState({ email: '', role: '' });
+  const [editForm, setEditForm] = useState({ email: '', role: '', name: '' });
+  const [isFormOpen, setIsFormOpen] = useState(false); // Changed to false for collapsed by default
 
   const fetchUsers = async () => {
     try {
@@ -26,18 +27,20 @@ const ManageUsers = () => {
 
   const handleCreateUser = async (e) => {
     e.preventDefault();
-    if (!newUser.email || !newUser.password) {
-      setError('Email and password are required.');
+    if (!newUser.email || !newUser.password || !newUser.name) {
+      setError('Email, password, and name are required.');
       return;
     }
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, newUser.email, newUser.password);
+      await updateProfile(userCredential.user, { displayName: newUser.name });
       await updateDoc(doc(db, 'Users', userCredential.user.uid), {
         email: newUser.email,
         role: newUser.role,
-        uid: userCredential.user.uid
+        uid: userCredential.user.uid,
+        name: newUser.name
       });
-      setNewUser({ email: '', password: '', role: 'user' });
+      setNewUser({ email: '', password: '', role: 'user', name: '' });
       setError('');
       fetchUsers();
     } catch (err) {
@@ -48,17 +51,18 @@ const ManageUsers = () => {
 
   const handleUpdateUser = async (e) => {
     e.preventDefault();
-    if (!editUser || !editForm.email || !editForm.role) {
-      setError('Email and role are required for update.');
+    if (!editUser || !editForm.email || !editForm.role || !editForm.name) {
+      setError('Email, role, and name are required for update.');
       return;
     }
     try {
       await updateDoc(doc(db, 'Users', editUser.id), {
         email: editForm.email,
-        role: editForm.role
+        role: editForm.role,
+        name: editForm.name
       });
       setEditUser(null);
-      setEditForm({ email: '', role: '' });
+      setEditForm({ email: '', role: '', name: '' });
       setError('');
       fetchUsers();
     } catch (err) {
@@ -80,7 +84,7 @@ const ManageUsers = () => {
 
   const handleEdit = (user) => {
     setEditUser(user);
-    setEditForm({ email: user.email, role: user.role });
+    setEditForm({ email: user.email, role: user.role, name: user.name });
   };
 
   useEffect(() => {
@@ -92,10 +96,30 @@ const ManageUsers = () => {
       <h1 className="text-3xl font-bold text-[#0F084B] mb-6">Manage Users</h1>
       {error && <p className="text-red-500 mb-4">{error}</p>}
 
-      {/* Create User Form */}
+      {/* Create User Form (Collapsible) */}
       <div className="mb-6 bg-white p-6 rounded-lg shadow-md">
-        <h2 className="text-xl text-[#0F084B] font-semibold mb-4">Add New User</h2>
-        <form onSubmit={handleCreateUser} className="space-y-4">
+        <h2 className="text-xl text-[#0F084B] font-semibold mb-4 flex justify-between items-center">
+          Add New User
+          <button
+            onClick={() => setIsFormOpen(!isFormOpen)}
+            className="text-[#0F084B] hover:text-[#1a167d] transition-colors"
+          >
+            {isFormOpen ? '−' : '+'}
+          </button>
+        </h2>
+        <form
+          onSubmit={handleCreateUser}
+          className="space-y-4"
+          style={{ display: isFormOpen ? 'block' : 'none' }}
+        >
+          <input
+            type="text"
+            value={newUser.name}
+            onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+            placeholder="Name"
+            className="w-full p-3 border border-[#ddd] rounded-lg"
+            required
+          />
           <input
             type="email"
             value={newUser.email}
@@ -117,7 +141,7 @@ const ManageUsers = () => {
             onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
             className="w-full p-3 border border-[#ddd] rounded-lg"
           >
-            <option value="user">warehouse_staff</option>
+            <option value="warehouse_staff">warehouse_staff</option>
             <option value="admin">admin</option>
           </select>
           <button
@@ -129,11 +153,28 @@ const ManageUsers = () => {
         </form>
       </div>
 
+      {/* Filter by Name */}
+      <div className="mb-6">
+        <input
+          type="text"
+          placeholder="Filter by name..."
+          onChange={(e) => {
+            const filterValue = e.target.value.toLowerCase();
+            const filteredUsers = users.filter(user =>
+              user.name && user.name.toLowerCase().includes(filterValue)
+            );
+            setUsers([...filteredUsers]); // Temporary filter, resets on fetch
+          }}
+          className="p-3 border border-[#ddd] rounded-lg w-full md:w-1/3"
+        />
+      </div>
+
       {/* User Table */}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse border border-[#ddd]">
           <thead>
             <tr className="bg-[#0F084B] text-white">
+              <th className="p-3 text-left border border-[#ddd]">Name</th>
               <th className="p-3 text-left border border-[#ddd]">Email</th>
               <th className="p-3 text-left border border-[#ddd]">Role</th>
               <th className="p-3 text-left border border-[#ddd]">Actions</th>
@@ -143,6 +184,18 @@ const ManageUsers = () => {
             {users.length > 0 ? (
               users.map((user) => (
                 <tr key={user.id} className="border-b border-[#ddd]">
+                  <td className="p-3 border border-[#ddd]">
+                    {editUser && editUser.id === user.id ? (
+                      <input
+                        type="text"
+                        value={editForm.name}
+                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                        className="w-full p-2 border border-[#ddd] rounded"
+                      />
+                    ) : (
+                      user.name || 'N/A'
+                    )}
+                  </td>
                   <td className="p-3 border border-[#ddd]">
                     {editUser && editUser.id === user.id ? (
                       <input
@@ -162,7 +215,7 @@ const ManageUsers = () => {
                         onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
                         className="w-full p-2 border border-[#ddd] rounded"
                       >
-                        <option value="user">warehouse_staff</option>
+                        <option value="warehouse_staff">warehouse_staff</option>
                         <option value="admin">admin</option>
                       </select>
                     ) : (
@@ -198,7 +251,7 @@ const ManageUsers = () => {
               ))
             ) : (
               <tr>
-                <td colSpan="3" className="p-3 text-center border border-[#ddd]">No users found.</td>
+                <td colSpan="4" className="p-3 text-center border border-[#ddd]">No users found.</td>
               </tr>
             )}
           </tbody>
