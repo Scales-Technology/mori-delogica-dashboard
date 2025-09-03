@@ -29,7 +29,6 @@ const ViewRecords = () => {
       const recordsList = querySnapshot.docs.map((doc) => {
         const data = doc.data();
         return {
-          id: doc.id,
           ...data,
           createdAt:
             data.createdAt?.toDate?.() || new Date(data.createdAt) || null,
@@ -71,7 +70,7 @@ const ViewRecords = () => {
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999); // Include entire end date
+      end.setHours(23, 59, 59, 999);
 
       if (start > end) {
         setError("Start date must be before end date.");
@@ -101,7 +100,7 @@ const ViewRecords = () => {
   };
 
   const handleDownloadCSV = () => {
-    const csvData = filteredRecords.map((record) => {
+    const csvData = filteredRecords.map((record, index) => {
       const productsSummary =
         Array.isArray(record.products) && record.products.length > 0
           ? record.products
@@ -115,7 +114,7 @@ const ViewRecords = () => {
           : "N/A";
 
       return {
-        ID: record.id || "N/A",
+        No: index + 1,
         ProductType: record.productType || "N/A",
         TotalQuantity: getTotalQuantity(record.products),
         TotalWeight:
@@ -128,6 +127,7 @@ const ViewRecords = () => {
                 .toFixed(2)
             : "N/A",
         Date: formatDate(record.createdAt),
+        DeliveryDate: formatDate(record.deliveryDate),
         NetWeight: record.netWeight
           ? parseFloat(record.netWeight).toFixed(2)
           : "N/A",
@@ -135,14 +135,27 @@ const ViewRecords = () => {
           ? parseFloat(record.tareWeight).toFixed(2)
           : "0.00",
         Destination: record.destination || "N/A",
-        Shipper: record.shipper || "N/A",
         SenderName: record.senderDetails?.name || "N/A",
-        SenderPhone: record.senderDetails?.phone || "N/A",
-        SenderID: record.senderDetails?.idNumber || "N/A",
-        SenderStaffName: record.senderDetails?.staffName || "N/A",
+        SenderLocation: record.senderDetails?.location || "N/A",
+        SenderCompany: record.senderDetails?.company || "N/A",
+        SenderJobTitle: record.senderDetails?.jobTitle || "N/A",
+        SenderFunctionality: record.senderDetails?.functionality || "N/A",
         ReceiverName: record.receiverDetails?.name || "N/A",
-        ReceiverPhone: record.receiverDetails?.phone || "N/A",
-        ReceiverID: record.receiverDetails?.idNumber || "N/A",
+        ReceiverTown: record.receiverDetails?.town || "N/A",
+        ReceiverExactLocation: record.receiverDetails?.exactLocation || "N/A",
+        VAT: record.vat ? parseFloat(record.vat).toFixed(2) : "N/A",
+        AdditionalCharges: record.additionalCharges
+          ? parseFloat(record.additionalCharges).toFixed(2)
+          : "0.00",
+        SpecialInstructions: record.specialInstructions || "N/A",
+        TotalAmount: record.totalAmount
+          ? parseFloat(record.totalAmount).toFixed(2)
+          : "N/A",
+        PaymentDate: formatDate(record.paymentDate),
+        PaymentTime: record.paymentTime || "N/A",
+        PaybillNo: record.paymentDetails?.paybillNo || "N/A",
+        AccountNo: record.paymentDetails?.accountNo || "N/A",
+        PaymentStatus: record.paymentDetails?.status || "N/A",
         Products: productsSummary,
       };
     });
@@ -184,17 +197,20 @@ const ViewRecords = () => {
           let successCount = 0;
 
           for (const record of recordsToAdd) {
-            if (!record.createdAt || !record.ProductType) continue; // Skip invalid records
+            if (!record.createdAt || !record.ProductType) continue;
 
             const products = record.Products ? JSON.parse(record.Products) : [];
             if (!Array.isArray(products)) {
-              console.warn(`Invalid products format for record: ${record.ID}`);
+              console.warn(`Invalid products format for record: ${record.No}`);
               continue;
             }
 
             const newRecord = {
               productType: record.ProductType,
               createdAt: new Date(record.createdAt),
+              deliveryDate: record.DeliveryDate
+                ? new Date(record.DeliveryDate)
+                : null,
               products: products.map((p) => ({
                 productType: p.productType || "N/A",
                 quantity: parseInt(p.quantity, 10) || 0,
@@ -207,17 +223,30 @@ const ViewRecords = () => {
               netWeight: parseFloat(record.NetWeight) || null,
               tareWeight: parseFloat(record.TareWeight) || 0,
               destination: record.Destination || null,
-              shipper: record.Shipper || null,
+              vat: parseFloat(record.VAT) || null,
+              additionalCharges: parseFloat(record.AdditionalCharges) || 0,
+              specialInstructions: record.SpecialInstructions || null,
+              totalAmount: parseFloat(record.TotalAmount) || null,
+              paymentDate: record.PaymentDate
+                ? new Date(record.PaymentDate)
+                : null,
+              paymentTime: record.PaymentTime || null,
               senderDetails: {
                 name: record.SenderName || null,
-                phone: record.SenderPhone || null,
-                idNumber: record.SenderID || null,
-                staffName: record.SenderStaffName || null,
+                location: record.SenderLocation || null,
+                company: record.SenderCompany || null,
+                jobTitle: record.SenderJobTitle || null,
+                functionality: record.SenderFunctionality || null,
               },
               receiverDetails: {
                 name: record.ReceiverName || null,
-                phone: record.ReceiverPhone || null,
-                idNumber: record.ReceiverID || null,
+                town: record.ReceiverTown || null,
+                exactLocation: record.ReceiverExactLocation || null,
+              },
+              paymentDetails: {
+                paybillNo: record.PaybillNo || null,
+                accountNo: record.AccountNo || null,
+                status: record.PaymentStatus || null,
               },
             };
 
@@ -227,7 +256,7 @@ const ViewRecords = () => {
 
           setUploadSuccess(`Successfully uploaded ${successCount} records.`);
           setUploadError("");
-          fetchRecords(); // Refresh records after upload
+          fetchRecords();
         } catch (err) {
           console.error("Error uploading records:", err);
           setUploadError(
@@ -271,7 +300,6 @@ const ViewRecords = () => {
       {uploadError && <p className="text-red-500 mb-4">{uploadError}</p>}
       {uploadSuccess && <p className="text-green-500 mb-4">{uploadSuccess}</p>}
 
-      {/* Date Range Filter */}
       <div className="mb-6 flex items-center space-x-4">
         <div>
           <label
@@ -317,7 +345,6 @@ const ViewRecords = () => {
         </button>
       </div>
 
-      {/* CSV Download and Upload */}
       <div className="mb-6 flex space-x-4">
         <button
           onClick={handleDownloadCSV}
@@ -346,7 +373,7 @@ const ViewRecords = () => {
         <table className="w-full border-collapse border border-[#ddd]">
           <thead>
             <tr className="bg-[#0F084B] text-white">
-              <th className="p-3 text-left border border-[#ddd]">ID</th>
+              <th className="p-3 text-left border border-[#ddd]">No</th>
               <th className="p-3 text-left border border-[#ddd]">
                 Product Type
               </th>
@@ -362,9 +389,11 @@ const ViewRecords = () => {
           </thead>
           <tbody>
             {filteredRecords.length > 0 ? (
-              currentRecords.map((record) => (
-                <tr key={record.id} className="border-b border-[#ddd]">
-                  <td className="p-3 border border-[#ddd]">{record.id}</td>
+              currentRecords.map((record, index) => (
+                <tr key={index} className="border-b border-[#ddd]">
+                  <td className="p-3 border border-[#ddd]">
+                    {indexOfFirstRecord + index + 1}
+                  </td>
                   <td className="p-3 border border-[#ddd]">
                     {record.productType || "N/A"}
                   </td>
@@ -428,7 +457,6 @@ const ViewRecords = () => {
         )}
       </div>
 
-      {/* Modal for Viewing Record Details */}
       {selectedRecord && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
@@ -436,9 +464,6 @@ const ViewRecords = () => {
               Record Details
             </h2>
             <div className="mb-4">
-              <p>
-                <span className="font-semibold">ID:</span> {selectedRecord.id}
-              </p>
               <p>
                 <span className="font-semibold">Product Type:</span>{" "}
                 {selectedRecord.productType || "N/A"}
@@ -471,12 +496,36 @@ const ViewRecords = () => {
                 {formatDate(selectedRecord.createdAt)}
               </p>
               <p>
+                <span className="font-semibold">Delivery Date:</span>{" "}
+                {formatDate(selectedRecord.deliveryDate)}
+              </p>
+              <p>
                 <span className="font-semibold">Destination:</span>{" "}
                 {selectedRecord.destination || "N/A"}
               </p>
               <p>
-                <span className="font-semibold">Shipper:</span>{" "}
-                {selectedRecord.shipper || "N/A"}
+                <span className="font-semibold">VAT:</span>{" "}
+                {selectedRecord.vat || "N/A"}%
+              </p>
+              <p>
+                <span className="font-semibold">Additional Charges:</span>{" "}
+                {selectedRecord.additionalCharges || "0.00"} KSh
+              </p>
+              <p>
+                <span className="font-semibold">Special Instructions:</span>{" "}
+                {selectedRecord.specialInstructions || "N/A"}
+              </p>
+              <p>
+                <span className="font-semibold">Total Amount:</span>{" "}
+                {selectedRecord.totalAmount || "N/A"} KSh
+              </p>
+              <p>
+                <span className="font-semibold">Payment Date:</span>{" "}
+                {formatDate(selectedRecord.paymentDate)}
+              </p>
+              <p>
+                <span className="font-semibold">Payment Time:</span>{" "}
+                {selectedRecord.paymentTime || "N/A"}
               </p>
             </div>
             {selectedRecord.senderDetails && (
@@ -489,16 +538,20 @@ const ViewRecords = () => {
                   {selectedRecord.senderDetails.name || "N/A"}
                 </p>
                 <p>
-                  <span className="font-semibold">Phone:</span>{" "}
-                  {selectedRecord.senderDetails.phone || "N/A"}
+                  <span className="font-semibold">Location:</span>{" "}
+                  {selectedRecord.senderDetails.location || "N/A"}
                 </p>
                 <p>
-                  <span className="font-semibold">ID Number:</span>{" "}
-                  {selectedRecord.senderDetails.idNumber || "N/A"}
+                  <span className="font-semibold">Company:</span>{" "}
+                  {selectedRecord.senderDetails.company || "N/A"}
                 </p>
                 <p>
-                  <span className="font-semibold">Staff Name:</span>{" "}
-                  {selectedRecord.senderDetails.staffName || "N/A"}
+                  <span className="font-semibold">Job Title:</span>{" "}
+                  {selectedRecord.senderDetails.jobTitle || "N/A"}
+                </p>
+                <p>
+                  <span className="font-semibold">Functionality:</span>{" "}
+                  {selectedRecord.senderDetails.functionality || "N/A"}
                 </p>
               </div>
             )}
@@ -512,12 +565,31 @@ const ViewRecords = () => {
                   {selectedRecord.receiverDetails.name || "N/A"}
                 </p>
                 <p>
-                  <span className="font-semibold">Phone:</span>{" "}
-                  {selectedRecord.receiverDetails.phone || "N/A"}
+                  <span className="font-semibold">Town:</span>{" "}
+                  {selectedRecord.receiverDetails.town || "N/A"}
                 </p>
                 <p>
-                  <span className="font-semibold">ID Number:</span>{" "}
-                  {selectedRecord.receiverDetails.idNumber || "N/A"}
+                  <span className="font-semibold">Exact Location:</span>{" "}
+                  {selectedRecord.receiverDetails.exactLocation || "N/A"}
+                </p>
+              </div>
+            )}
+            {selectedRecord.paymentDetails && (
+              <div className="mb-4">
+                <h3 className="font-semibold text-[#0F084B] mb-2">
+                  Payment Details:
+                </h3>
+                <p>
+                  <span className="font-semibold">Paybill No:</span>{" "}
+                  {selectedRecord.paymentDetails.paybillNo || "N/A"}
+                </p>
+                <p>
+                  <span className="font-semibold">Account No:</span>{" "}
+                  {selectedRecord.paymentDetails.accountNo || "N/A"}
+                </p>
+                <p>
+                  <span className="font-semibold">Status:</span>{" "}
+                  {selectedRecord.paymentDetails.status || "N/A"}
                 </p>
               </div>
             )}
