@@ -23,11 +23,13 @@ const ViewRecords = () => {
 
   const fetchRecords = async () => {
     try {
+      console.log("Fetching records from Firestore...");
       const recordsRef = collection(db, "Records");
       const recordsQuery = query(recordsRef, orderBy("createdAt", "desc"));
       const querySnapshot = await getDocs(recordsQuery);
       const recordsList = querySnapshot.docs.map((doc) => {
         const data = doc.data();
+        console.log("Fetched record:", JSON.stringify(data, null, 2));
         return {
           ...data,
           createdAt:
@@ -37,8 +39,13 @@ const ViewRecords = () => {
       setRecords(recordsList);
       setFilteredRecords(recordsList);
       setCurrentPage(1);
+      console.log(`Successfully fetched ${recordsList.length} records.`);
     } catch (err) {
-      console.error("Error fetching records:", err);
+      console.error("Error fetching records:", {
+        message: err.message,
+        code: err.code,
+        stack: err.stack,
+      });
       setError("Failed to load records.");
     }
   };
@@ -77,16 +84,22 @@ const ViewRecords = () => {
         return;
       }
 
+      console.log(`Filtering records from ${start} to ${end}...`);
       const filtered = records.filter((record) => {
-        if (!record.createdAt) return false;
+        if (!record.createdAt) {
+          console.warn("Record missing createdAt:", record);
+          return false;
+        }
         const recordDate = new Date(record.createdAt);
         return recordDate >= start && recordDate <= end;
       });
       setFilteredRecords(filtered);
       setError("");
+      console.log(`Filtered ${filtered.length} records.`);
     } else {
       setFilteredRecords(records);
       setError("");
+      console.log("No date filter applied. Showing all records.");
     }
     setCurrentPage(1);
   };
@@ -97,9 +110,11 @@ const ViewRecords = () => {
     setFilteredRecords(records);
     setError("");
     setCurrentPage(1);
+    console.log("Cleared filters. Showing all records.");
   };
 
   const handleDownloadCSV = () => {
+    console.log("Generating CSV for download...");
     const csvData = filteredRecords.map((record, index) => {
       const productsSummary =
         Array.isArray(record.products) && record.products.length > 0
@@ -115,7 +130,7 @@ const ViewRecords = () => {
 
       return {
         No: index + 1,
-        ProductType: record.productType || "N/A",
+        ProductType: record.selectedProductType || "N/A",
         TotalQuantity: getTotalQuantity(record.products),
         TotalWeight:
           record.products && record.products.length > 0
@@ -127,39 +142,37 @@ const ViewRecords = () => {
                 .toFixed(2)
             : "N/A",
         Date: formatDate(record.createdAt),
-        DeliveryDate: formatDate(record.deliveryDate),
+        DeliveryDate: formatDate(record.deliveryInfo?.deliveryDate),
         NetWeight: record.netWeight
           ? parseFloat(record.netWeight).toFixed(2)
           : "N/A",
         TareWeight: record.tareWeight
           ? parseFloat(record.tareWeight).toFixed(2)
           : "0.00",
-        Destination: record.destination || "N/A",
         SenderName: record.senderDetails?.name || "N/A",
         SenderLocation: record.senderDetails?.location || "N/A",
-        SenderCompany: record.senderDetails?.company || "N/A",
+        SenderCompanyRepName: record.senderDetails?.companyRepName || "N/A",
         SenderJobTitle: record.senderDetails?.jobTitle || "N/A",
-        SenderFunctionality: record.senderDetails?.functionality || "N/A",
+        SenderItemsFunctionality:
+          record.senderDetails?.itemsFunctionality || "N/A",
         ReceiverName: record.receiverDetails?.name || "N/A",
-        ReceiverTown: record.receiverDetails?.town || "N/A",
+        ReceiverTown: record.receiverDetails?.locationTown || "N/A",
         ReceiverExactLocation: record.receiverDetails?.exactLocation || "N/A",
-        VAT: record.vat ? parseFloat(record.vat).toFixed(2) : "N/A",
-        AdditionalCharges: record.additionalCharges
-          ? parseFloat(record.additionalCharges).toFixed(2)
-          : "0.00",
-        SpecialInstructions: record.specialInstructions || "N/A",
-        TotalAmount: record.totalAmount
-          ? parseFloat(record.totalAmount).toFixed(2)
+        VAT: record.deliveryInfo?.vat
+          ? parseFloat(record.deliveryInfo.vat).toFixed(2)
           : "N/A",
-        PaymentDate: formatDate(record.paymentDate),
-        PaymentTime: record.paymentTime || "N/A",
-        PaybillNo: record.paymentDetails?.paybillNo || "N/A",
-        AccountNo: record.paymentDetails?.accountNo || "N/A",
-        PaymentStatus: record.paymentDetails?.status || "N/A",
-        Products: productsSummary,
+        AdditionalCharges: record.deliveryInfo?.additionalCharges
+          ? parseFloat(record.deliveryInfo.additionalCharges).toFixed(2)
+          : "0.00",
+        SpecialInstructions: record.deliveryInfo?.specialInstructions || "N/A",
+        TotalAmount: record.deliveryInfo?.totalAmount
+          ? parseFloat(record.deliveryInfo.totalAmount).toFixed(2)
+          : "N/A",
+        PaymentStatus: record.paymentStatus || "N/A",
       };
     });
 
+    console.log("CSV data prepared:", JSON.stringify(csvData, null, 2));
     const csv =
       "\uFEFF" +
       Papa.unparse(csvData, {
@@ -178,26 +191,42 @@ const ViewRecords = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    console.log("CSV downloaded successfully.");
   };
 
   const handleUploadCSV = (event) => {
     const file = event.target.files[0];
-    if (!file) return;
-
-    if (!file.name.endsWith(".csv")) {
-      setUploadError("Please upload a CSV file.");
+    if (!file) {
+      console.warn("No file selected for upload.");
       return;
     }
 
+    if (!file.name.endsWith(".csv")) {
+      setUploadError("Please upload a CSV file.");
+      console.error("Invalid file type:", file.name);
+      return;
+    }
+
+    console.log("Parsing CSV file:", file.name);
     Papa.parse(file, {
       header: true,
       complete: async (result) => {
         try {
           const recordsToAdd = result.data;
           let successCount = 0;
+          console.log(
+            "Parsed CSV data:",
+            JSON.stringify(recordsToAdd, null, 2)
+          );
 
           for (const record of recordsToAdd) {
-            if (!record.createdAt || !record.ProductType) continue;
+            if (!record.createdAt || !record.ProductType) {
+              console.warn(
+                `Skipping record due to missing createdAt or ProductType:`,
+                record
+              );
+              continue;
+            }
 
             const products = record.Products ? JSON.parse(record.Products) : [];
             if (!Array.isArray(products)) {
@@ -206,11 +235,17 @@ const ViewRecords = () => {
             }
 
             const newRecord = {
-              productType: record.ProductType,
+              selectedProductType: record.ProductType || null,
               createdAt: new Date(record.createdAt),
-              deliveryDate: record.DeliveryDate
-                ? new Date(record.DeliveryDate)
-                : null,
+              deliveryInfo: {
+                deliveryDate: record.DeliveryDate
+                  ? new Date(record.DeliveryDate)
+                  : null,
+                vat: parseFloat(record.VAT) || null,
+                additionalCharges: parseFloat(record.AdditionalCharges) || 0,
+                specialInstructions: record.SpecialInstructions || null,
+                totalAmount: parseFloat(record.TotalAmount) || null,
+              },
               products: products.map((p) => ({
                 productType: p.productType || "N/A",
                 quantity: parseInt(p.quantity, 10) || 0,
@@ -222,43 +257,39 @@ const ViewRecords = () => {
               })),
               netWeight: parseFloat(record.NetWeight) || null,
               tareWeight: parseFloat(record.TareWeight) || 0,
-              destination: record.Destination || null,
-              vat: parseFloat(record.VAT) || null,
-              additionalCharges: parseFloat(record.AdditionalCharges) || 0,
-              specialInstructions: record.SpecialInstructions || null,
-              totalAmount: parseFloat(record.TotalAmount) || null,
-              paymentDate: record.PaymentDate
-                ? new Date(record.PaymentDate)
-                : null,
-              paymentTime: record.PaymentTime || null,
               senderDetails: {
                 name: record.SenderName || null,
                 location: record.SenderLocation || null,
-                company: record.SenderCompany || null,
+                companyRepName: record.SenderCompanyRepName || null,
                 jobTitle: record.SenderJobTitle || null,
-                functionality: record.SenderFunctionality || null,
+                itemsFunctionality: record.SenderItemsFunctionality || null,
               },
               receiverDetails: {
                 name: record.ReceiverName || null,
-                town: record.ReceiverTown || null,
+                locationTown: record.ReceiverTown || null,
                 exactLocation: record.ReceiverExactLocation || null,
               },
-              paymentDetails: {
-                paybillNo: record.PaybillNo || null,
-                accountNo: record.AccountNo || null,
-                status: record.PaymentStatus || null,
-              },
+              paymentStatus: record.PaymentStatus || null,
             };
 
+            console.log(
+              "Uploading record to Firestore:",
+              JSON.stringify(newRecord, null, 2)
+            );
             await addDoc(collection(db, "Records"), newRecord);
             successCount++;
           }
 
           setUploadSuccess(`Successfully uploaded ${successCount} records.`);
           setUploadError("");
+          console.log(`Successfully uploaded ${successCount} records.`);
           fetchRecords();
         } catch (err) {
-          console.error("Error uploading records:", err);
+          console.error("Error uploading records:", {
+            message: err.message,
+            code: err.code,
+            stack: err.stack,
+          });
           setUploadError(
             "Failed to upload records. Please check the CSV format."
           );
@@ -283,14 +314,17 @@ const ViewRecords = () => {
 
   const handlePageChange = (pageNumber) => {
     setCurrentPage(pageNumber);
+    console.log(`Changed to page ${pageNumber}`);
   };
 
   const handleView = (record) => {
     setSelectedRecord(record);
+    console.log("Viewing record:", JSON.stringify(record, null, 2));
   };
 
   const handleClose = () => {
     setSelectedRecord(null);
+    console.log("Closed record view.");
   };
 
   return (
@@ -395,7 +429,7 @@ const ViewRecords = () => {
                     {indexOfFirstRecord + index + 1}
                   </td>
                   <td className="p-3 border border-[#ddd]">
-                    {record.productType || "N/A"}
+                    {record.selectedProductType || "N/A"}
                   </td>
                   <td className="p-3 border border-[#ddd]">
                     {getTotalQuantity(record.products)}
@@ -466,7 +500,7 @@ const ViewRecords = () => {
             <div className="mb-4">
               <p>
                 <span className="font-semibold">Product Type:</span>{" "}
-                {selectedRecord.productType || "N/A"}
+                {selectedRecord.selectedProductType || "N/A"}
               </p>
               <p>
                 <span className="font-semibold">Total Quantity:</span>{" "}
@@ -497,35 +531,40 @@ const ViewRecords = () => {
               </p>
               <p>
                 <span className="font-semibold">Delivery Date:</span>{" "}
-                {formatDate(selectedRecord.deliveryDate)}
-              </p>
-              <p>
-                <span className="font-semibold">Destination:</span>{" "}
-                {selectedRecord.destination || "N/A"}
+                {formatDate(selectedRecord.deliveryInfo?.deliveryDate)}
               </p>
               <p>
                 <span className="font-semibold">VAT:</span>{" "}
-                {selectedRecord.vat || "N/A"}%
+                {selectedRecord.deliveryInfo?.vat
+                  ? parseFloat(selectedRecord.deliveryInfo.vat).toFixed(2)
+                  : "N/A"}
+                %
               </p>
               <p>
                 <span className="font-semibold">Additional Charges:</span>{" "}
-                {selectedRecord.additionalCharges || "0.00"} KSh
+                {selectedRecord.deliveryInfo?.additionalCharges
+                  ? parseFloat(
+                      selectedRecord.deliveryInfo.additionalCharges
+                    ).toFixed(2)
+                  : "0.00"}{" "}
+                KSh
               </p>
               <p>
                 <span className="font-semibold">Special Instructions:</span>{" "}
-                {selectedRecord.specialInstructions || "N/A"}
+                {selectedRecord.deliveryInfo?.specialInstructions || "N/A"}
               </p>
               <p>
                 <span className="font-semibold">Total Amount:</span>{" "}
-                {selectedRecord.totalAmount || "N/A"} KSh
+                {selectedRecord.deliveryInfo?.totalAmount
+                  ? parseFloat(selectedRecord.deliveryInfo.totalAmount).toFixed(
+                      2
+                    )
+                  : "N/A"}{" "}
+                KSh
               </p>
               <p>
-                <span className="font-semibold">Payment Date:</span>{" "}
-                {formatDate(selectedRecord.paymentDate)}
-              </p>
-              <p>
-                <span className="font-semibold">Payment Time:</span>{" "}
-                {selectedRecord.paymentTime || "N/A"}
+                <span className="font-semibold">Payment Status:</span>{" "}
+                {selectedRecord.paymentStatus || "N/A"}
               </p>
             </div>
             {selectedRecord.senderDetails && (
@@ -542,16 +581,16 @@ const ViewRecords = () => {
                   {selectedRecord.senderDetails.location || "N/A"}
                 </p>
                 <p>
-                  <span className="font-semibold">Company:</span>{" "}
-                  {selectedRecord.senderDetails.company || "N/A"}
+                  <span className="font-semibold">Company Rep Name:</span>{" "}
+                  {selectedRecord.senderDetails.companyRepName || "N/A"}
                 </p>
                 <p>
                   <span className="font-semibold">Job Title:</span>{" "}
                   {selectedRecord.senderDetails.jobTitle || "N/A"}
                 </p>
                 <p>
-                  <span className="font-semibold">Functionality:</span>{" "}
-                  {selectedRecord.senderDetails.functionality || "N/A"}
+                  <span className="font-semibold">Items Functionality:</span>{" "}
+                  {selectedRecord.senderDetails.itemsFunctionality || "N/A"}
                 </p>
               </div>
             )}
@@ -566,30 +605,11 @@ const ViewRecords = () => {
                 </p>
                 <p>
                   <span className="font-semibold">Town:</span>{" "}
-                  {selectedRecord.receiverDetails.town || "N/A"}
+                  {selectedRecord.receiverDetails.locationTown || "N/A"}
                 </p>
                 <p>
                   <span className="font-semibold">Exact Location:</span>{" "}
                   {selectedRecord.receiverDetails.exactLocation || "N/A"}
-                </p>
-              </div>
-            )}
-            {selectedRecord.paymentDetails && (
-              <div className="mb-4">
-                <h3 className="font-semibold text-[#0F084B] mb-2">
-                  Payment Details:
-                </h3>
-                <p>
-                  <span className="font-semibold">Paybill No:</span>{" "}
-                  {selectedRecord.paymentDetails.paybillNo || "N/A"}
-                </p>
-                <p>
-                  <span className="font-semibold">Account No:</span>{" "}
-                  {selectedRecord.paymentDetails.accountNo || "N/A"}
-                </p>
-                <p>
-                  <span className="font-semibold">Status:</span>{" "}
-                  {selectedRecord.paymentDetails.status || "N/A"}
                 </p>
               </div>
             )}
